@@ -39,6 +39,7 @@ use log::error;
 use poll_promise::Promise;
 use quicktag_core::classes::get_class_by_id;
 use quicktag_core::tagtypes::TagType;
+use quicktag_core::util::u32_from_endian;
 use quicktag_scanner::signatures::{SIGNATURE_LIST, Signature};
 use quicktag_scanner::{ScanResult, ScannedItem, TagCache, read_raw_string_blob};
 use quicktag_strings::localized::{RawStringHashCache, StringCache};
@@ -1614,26 +1615,27 @@ fn traverse_tag(
         references_collapsed.iter().map(|t| (*t, 0)).collect_vec()
     };
 
+    let endian = package_manager().platform.endianness();
     let mut raw_strings = vec![];
     let mut localized_string_hashes = vec![];
     let mut raw_string_hashes = vec![];
-    if options.show_strings {
-        if let Ok(tag_data) = package_manager().read_tag(tag) {
-            for (i, b) in tag_data.chunks_exact(4).enumerate() {
-                let v: [u8; 4] = b.try_into().unwrap();
-                let hash = u32::from_le_bytes(v);
+    if options.show_strings
+        && let Ok(tag_data) = package_manager().read_tag(tag)
+    {
+        for (i, b) in tag_data.chunks_exact(4).enumerate() {
+            let v: [u8; 4] = b.try_into().unwrap();
+            let hash = u32_from_endian(endian, v);
 
-                if let Some(v) = options.localized_strings.get(&hash) {
-                    localized_string_hashes.push(v[0].clone());
-                }
+            if let Some(v) = options.localized_strings.get(&hash) {
+                localized_string_hashes.push(v[0].clone());
+            }
 
-                if let Some(v) = options.raw_strings.get(&hash) {
-                    raw_string_hashes.push(v[0].clone());
-                }
+            if let Some(v) = options.raw_strings.get(&hash) {
+                raw_string_hashes.push(v[0].clone());
+            }
 
-                if hash == 0x80800065 {
-                    raw_strings.extend(read_raw_string_blob(&tag_data, i as u64 * 4));
-                }
+            if hash == 0x80800065 {
+                raw_strings.extend(read_raw_string_blob(&tag_data, i as u64 * 4));
             }
         }
     }
