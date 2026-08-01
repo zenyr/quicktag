@@ -81,10 +81,16 @@ macro_rules! class_internal {
 
 pub const CLASSES_BASE: &[TagClass] = &[
     class!(0x80800000 s_bungie_script),
-    class!(0x80800005 char @size(1) @block_tags),
-    class!(0x80800007 u32 @size(4) @parse(parse_raw_hex::<u32>) @block_tags),
-    class!(0x80800009 byte @size(1) @parse(parse_raw_hex::<u8>) @block_tags),
-    class!(0x8080000A u16 @size(2) @parse(parse_raw_hex::<u16>) @block_tags),
+    class!(0x80800004 bool @size(1) @parse(parse_bool) @block_tags),
+    class!(0x80800005 int8 @size(1) @parse(parse_int::<i8>) @block_tags),
+    class!(0x80800006 int16 @size(2) @parse(parse_int::<i16>) @block_tags),
+    class!(0x80800007 int32 @size(4) @parse(parse_int::<i32>) @block_tags),
+    class!(0x80800008 int64 @size(8) @parse(parse_int::<i64>) @block_tags),
+    class!(0x80800009 uint8 @size(1) @parse(parse_raw_hex::<u8>) @block_tags),
+    class!(0x8080000A uint16 @size(2) @parse(parse_raw_hex::<u16>) @block_tags),
+    class!(0x8080000B uint32 @size(4) @parse(parse_raw_hex::<u32>) @block_tags),
+    class!(0x8080000C uint64 @size(8) @parse(parse_raw_hex::<u64>) @block_tags),
+    class!(0x8080000F real32 @size(4) @parse(parse_real32) @block_tags),
     class!(0x80800014 taghash @size(4) @parse(parse_taghash)),
     class!(0x80800070 unknown4 @size(4) @parse(parse_raw::<u32>) @block_tags),
     class!(0x80800090 vec4 @size(16) @parse(parse_vec4) @block_tags),
@@ -497,6 +503,16 @@ fn parse_raw_hex<T: Sized + Pod + UpperHex>(data: &[u8], endian: Endian) -> Stri
     format!("0x{v:X}")
 }
 
+fn parse_int<T: Sized + Pod + Display>(data: &[u8], endian: Endian) -> String {
+    assert!(data.len() >= size_of::<T>());
+    let mut bytes = data[0..size_of::<T>()].to_vec();
+    if endian != Endian::NATIVE {
+        bytes.reverse();
+    }
+    let v: T = bytemuck::try_pod_read_unaligned(&bytes).unwrap();
+    v.to_string()
+}
+
 fn parse_taghash(data: &[u8], endian: Endian) -> String {
     let v = match endian {
         Endian::Big => u32::from_be_bytes(data.try_into().unwrap()),
@@ -504,6 +520,22 @@ fn parse_taghash(data: &[u8], endian: Endian) -> String {
     };
     let taghash = TagHash(v);
     format!("tag({taghash})")
+}
+
+fn parse_bool(data: &[u8], _endian: Endian) -> String {
+    if data[0] == 0 {
+        "false".to_string()
+    } else {
+        "true".to_string()
+    }
+}
+
+fn parse_real32(data: &[u8], endian: Endian) -> String {
+    let v = match endian {
+        Endian::Big => f32::from_be_bytes(data.try_into().unwrap()),
+        Endian::Little => f32::from_le_bytes(data.try_into().unwrap()),
+    };
+    format!("{v}")
 }
 
 fn parse_vec4(data: &[u8], endian: Endian) -> String {
