@@ -142,8 +142,19 @@ so the GUI and CLI share behavior.
 Synthetic tests exercise hash byte order, pagination, byte bounds, Unicode
 clipping, request parsing/recovery, dataset invalidation, future-cache errors, and
 equivalence of merged blocked-range lookup to the original scanner membership test.
-Actual package queries and GUI/CLI result comparison require the user's dataset;
-record the tested game build and examples before claiming data-level parity.
+On 2026-09-13 the Windows GNU release binary was exercised against the user's
+installed Destiny 2 build `244257.26.07.15.2000.v500_live.main` (Steam build
+`24238629`, parser option `d2_eof`). The dataset contained 2,357 package files;
+the package manager exposed 8,647,344 tag headers. Indexing produced 7,391,906
+cache records, including 41,352 read failures (redacted package/key errors were
+observed). The cache is partial with respect to those inaccessible payloads.
+
+Live checks passed for pagination, both string searches, string-hash references,
+reference offsets matching original bytes, reverse-edge consistency, matches,
+byte reads, lossless binary export (SHA-256 comparison), overwrite refusal, and
+error recovery. Synthetic tests passed on Linux (8 CLI tests, 2 scanner tests).
+The desktop GUI was not launched for side-by-side comparison, and older Sunrise
+builds have not yet been tested. No claim of full GUI parity is made.
 
 A repeatable data-backed smoke runner is provided at
 `scripts/validate-agent-cli.py`. After indexing, pass the full local or SSH `serve`

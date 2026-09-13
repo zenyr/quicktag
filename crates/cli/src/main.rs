@@ -266,7 +266,12 @@ impl Session {
             }
             Command::StringRefs { hash, page } => {
                 let hash = hex32(&hash)?;
-                let mut tags: Vec<_> = self.cache()?.hashes.iter().collect();
+                let mut tags: Vec<_> = self
+                    .cache()?
+                    .hashes
+                    .iter()
+                    .filter(|(_, scan)| scan.string_hashes.iter().any(|x| x.hash == hash))
+                    .collect();
                 tags.sort_by_key(|(h, _)| h.0);
                 let rows = tags.into_iter().flat_map(|(tag,scan)| scan.string_hashes.iter().filter(move |x|x.hash == hash).map(move |x|json!({"tag":tag_name(*tag),"offset":x.offset,"basis":"hash_match"}))).collect();
                 page.apply(rows)
@@ -340,7 +345,12 @@ impl Session {
                 let needle = needle.as_str();
                 match source {
                     StringSource::Raw => {
-                        let mut tags: Vec<_> = self.cache()?.hashes.iter().collect();
+                        let mut tags: Vec<_> = self
+                            .cache()?
+                            .hashes
+                            .iter()
+                            .filter(|(_, scan)| !scan.raw_strings.is_empty())
+                            .collect();
                         tags.sort_by_key(|(h, _)| h.0);
                         let rows = tags.into_iter().flat_map(|(tag, scan)| {
                             scan.raw_strings
