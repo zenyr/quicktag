@@ -9,7 +9,7 @@ quicktag-core = { path = "../core" }
 
 anyhow.workspace = true
 binrw.workspace = true
-bytemuck = "1"
+bytemuck = { version = "1", features = ["extern_crate_alloc"] }
 lazy_static = "1.4.0"
 log.workspace = true
 rustc-hash.workspace = true

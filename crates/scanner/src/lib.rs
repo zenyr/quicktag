@@ -354,6 +354,12 @@ pub fn load_tag_cache_at(cache_file_path: impl AsRef<Path>) -> anyhow::Result<Ta
         return Ok(cache);
     }
 
+    build_tag_cache_at(cache_file_path)
+}
+
+/// Explicitly rebuild a scan cache, even if an existing cache appears current.
+pub fn build_tag_cache_at(cache_file_path: impl AsRef<Path>) -> anyhow::Result<TagCache> {
+    let cache_file_path = cache_file_path.as_ref();
     *SCANNER_PROGRESS.write() = ScanStatus::CreatingScanner;
     let scanner_context = Arc::new(ScannerContext::create(&package_manager())?);
 
@@ -391,7 +397,7 @@ pub fn load_tag_cache_at(cache_file_path: impl AsRef<Path>) -> anyhow::Result<Ta
             info!("Opening pkg {path} ({}/{package_count})", current_package);
             let pkg = {
                 profiling::scope!("open package");
-                version.open(&path.path).unwrap()
+                version.open(&path.path)?
             };
 
             let mut all_tags: Vec<(usize, UEntryHeader)> = pkg
@@ -466,8 +472,10 @@ pub fn load_tag_cache_at(cache_file_path: impl AsRef<Path>) -> anyhow::Result<Ta
                 results.insert(hash, scan_result);
             }
 
-            results
+            Ok(results)
         })
+        .collect::<anyhow::Result<Vec<_>>>()?
+        .into_iter()
         .flatten()
         .collect();
 

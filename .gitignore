@@ -21,3 +21,7 @@ wwise_info_*.txt
 # Wordlist source filest
 wordlist_*.txt
 wordlist_src/
+
+# Agent CLI local caches and dataset identity
+*.cache
+*.cache.dataset.json

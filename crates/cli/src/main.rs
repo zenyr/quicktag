@@ -4,6 +4,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use quicktag_scanner::{TagCache, cache::CacheLoadResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+mod dataset;
+
 use std::{
     fs::OpenOptions,
     io::{self, BufRead, Write},
@@ -34,7 +36,12 @@ struct Args {
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Command {
     /// Build/reuse an upstream-compatible scan cache. This is the only command that scans all packages.
-    Index,
+    Index {
+        /// Rebuild explicitly after package updates or when importing an unbound GUI cache.
+        #[arg(long)]
+        #[serde(default)]
+        rebuild: bool,
+    },
     /// Show the active dataset and hash notation.
     Info,
     /// Search named tag entries from package headers.
@@ -145,16 +152,26 @@ fn default_limit() -> usize {
 }
 impl Page {
     fn apply(self, rows: Vec<Value>) -> Result<Value> {
+        self.select(rows, |row| row)
+    }
+    // Materialize only the requested page; count matches without serializing them.
+    fn select<T>(
+        self,
+        rows: impl IntoIterator<Item = T>,
+        mut render: impl FnMut(T) -> Value,
+    ) -> Result<Value> {
         ensure!(
             (1..=200).contains(&self.limit),
             "limit must be between 1 and 200"
         );
-        let total = rows.len();
-        let items: Vec<_> = rows
-            .into_iter()
-            .skip(self.offset)
-            .take(self.limit)
-            .collect();
+        let mut total = 0;
+        let mut items = Vec::with_capacity(self.limit);
+        for row in rows {
+            if total >= self.offset && items.len() < self.limit {
+                items.push(render(row));
+            }
+            total += 1;
+        }
         let end = self.offset.saturating_add(items.len());
         Ok(
             json!({"items": items, "total": total, "next_offset": if end < total {Some(end)} else {None}}),
@@ -170,8 +187,7 @@ fn parse_usize(s: &str) -> Result<usize, String> {
     .map_err(|e| e.to_string())
 }
 fn hex32(s: &str) -> Result<u32> {
-    Ok(u32::from_str_radix(s.strip_prefix("0x").unwrap_or(s), 16)
-        .context("expected hexadecimal u32")?)
+    u32::from_str_radix(s.strip_prefix("0x").unwrap_or(s), 16).context("expected hexadecimal u32")
 }
 // QuickTag displays a TagHash as the little-endian bytes, not its integer value.
 fn parse_tag(s: &str) -> Result<TagHash> {
@@ -191,6 +207,7 @@ fn clipped(s: &str) -> (String, bool) {
 
 struct Session {
     cache_path: Option<PathBuf>,
+    identity: dataset::Identity,
     cache: Option<TagCache>,
     strings: Option<quicktag_strings::localized::StringCache>,
 }
@@ -201,6 +218,7 @@ impl Session {
                 .cache_path
                 .as_ref()
                 .context("this query requires --cache; build it with index first")?;
+            self.identity.verify(path)?;
             self.cache = Some(match TagCache::load(path)? {
                 CacheLoadResult::Loaded(cache) => cache,
                 CacheLoadResult::Rebuild => {
@@ -213,9 +231,17 @@ impl Session {
     fn query(&mut self, command: Command) -> Result<Value> {
         let pm = package_manager();
         match command {
-            Command::Index => {
+            Command::Index { rebuild } => {
                 let path = self.cache_path.as_ref().context("index requires --cache")?;
-                let cache = quicktag_scanner::load_tag_cache_at(path)?;
+                let cache = if rebuild {
+                    quicktag_scanner::build_tag_cache_at(path)?
+                } else {
+                    if path.exists() {
+                        self.identity.verify(path)?;
+                    }
+                    quicktag_scanner::load_tag_cache_at(path)?
+                };
+                self.identity.save(path)?;
                 let result = json!({"cache": path, "tags": cache.hashes.len(), "failed_tags": cache.hashes.values().filter(|s| !s.successful).count(), "cache_version": cache.version});
                 self.cache = Some(cache);
                 Ok(result)
@@ -265,7 +291,7 @@ impl Session {
                     }
                 }
                 hashes.sort_by_key(|h| h.0);
-                page.apply(hashes.into_iter().map(header).collect())
+                page.select(hashes, header)
             }
             Command::Tag { hash } => {
                 let tag = parse_tag(&hash)?;
@@ -311,19 +337,22 @@ impl Session {
                 page,
             } => {
                 let needle = query.to_lowercase();
-                let mut rows = vec![];
+                let needle = needle.as_str();
                 match source {
                     StringSource::Raw => {
                         let mut tags: Vec<_> = self.cache()?.hashes.iter().collect();
                         tags.sort_by_key(|(h, _)| h.0);
-                        for (tag, scan) in tags {
-                            for (index, text) in scan.raw_strings.iter().enumerate() {
-                                if text.to_lowercase().contains(&needle) {
-                                    let (text, truncated) = clipped(text);
-                                    rows.push(json!({"tag": tag_name(*tag), "index": index, "text": text, "text_truncated": truncated}));
-                                }
-                            }
-                        }
+                        let rows = tags.into_iter().flat_map(|(tag, scan)| {
+                            scan.raw_strings
+                                .iter()
+                                .enumerate()
+                                .filter(move |(_, text)| text.to_lowercase().contains(needle))
+                                .map(move |(index, text)| (tag, index, text))
+                        });
+                        page.select(rows, |(tag,index,text)| {
+                            let (text, truncated) = clipped(text);
+                            json!({"tag":tag_name(*tag),"index":index,"text":text,"text_truncated":truncated})
+                        })
                     }
                     StringSource::Localized => {
                         if self.strings.is_none() {
@@ -331,17 +360,18 @@ impl Session {
                         }
                         let mut strings: Vec<_> = self.strings.as_ref().unwrap().iter().collect();
                         strings.sort_by_key(|(h, _)| **h);
-                        for (hash, texts) in strings {
-                            for text in texts {
-                                if text.to_lowercase().contains(&needle) {
-                                    let (text, truncated) = clipped(text);
-                                    rows.push(json!({"string_hash": format!("0x{hash:08X}"), "text": text, "text_truncated": truncated}));
-                                }
-                            }
-                        }
+                        let rows = strings.into_iter().flat_map(|(hash, texts)| {
+                            texts
+                                .iter()
+                                .filter(move |text| text.to_lowercase().contains(needle))
+                                .map(move |text| (hash, text))
+                        });
+                        page.select(rows, |(hash,text)| {
+                            let (text,truncated) = clipped(text);
+                            json!({"string_hash":format!("0x{hash:08X}"),"text":text,"text_truncated":truncated})
+                        })
                     }
                 }
-                page.apply(rows)
             }
             Command::Matches { hash, page } => {
                 let tag = parse_tag(&hash)?;
@@ -510,6 +540,7 @@ fn run(args: Args) -> Result<bool> {
     quicktag_core::classes::initialize_reference_names();
     let mut session = Session {
         cache_path: args.cache,
+        identity: dataset::Identity::current()?,
         cache: None,
         strings: None,
     };
@@ -568,6 +599,22 @@ mod tests {
         assert!(parse_tag("ZZZZZZZZ").is_err());
     }
     #[test]
+    fn only_renders_the_requested_page() {
+        let mut rendered = 0;
+        let result = Page {
+            limit: 2,
+            offset: 40,
+        }
+        .select(0..100, |i| {
+            rendered += 1;
+            json!(i)
+        })
+        .unwrap();
+        assert_eq!(rendered, 2);
+        assert_eq!(result["total"], 100);
+        assert_eq!(result["items"], json!([40, 41]));
+    }
+    #[test]
     fn pagination_reports_remaining() {
         let rows = (0..5).map(|i| json!(i)).collect();
         let r = Page {
@@ -607,7 +654,7 @@ mod tests {
     #[test]
     fn bytes_boundaries() {
         assert_eq!(byte_range(&[1, 2, 3], 1, usize::MAX).unwrap(), &[2, 3]);
-        assert_eq!(byte_range(&[1], 1, 3).unwrap(), &[]);
+        assert!(byte_range(&[1], 1, 3).unwrap().is_empty());
         assert!(byte_range(&[1], 2, 1).is_err());
     }
     #[test]

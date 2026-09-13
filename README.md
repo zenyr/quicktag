@@ -1,3 +1,7 @@
+> **Agent CLI fork:** the `agent-cli` branch adds bounded JSON queries and a
+> persistent JSONL interface. See [CLI usage and feature coverage](docs/agent-cli.md).
+> Build it with `cargo build --locked --release -p quicktag-cli`.
+
 ![quicktag logo](./quicktag_full.png)
 
 # QuickTag

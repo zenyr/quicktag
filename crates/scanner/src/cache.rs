@@ -126,3 +126,30 @@ pub enum CacheLoadResult {
     Loaded(TagCache),
     Rebuild,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn future_cache_returns_error_without_ui_or_process_exit() {
+        let path = std::env::temp_dir().join(format!(
+            "quicktag-future-{}-{}.cache",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let cache = TagCache {
+            version: TagCache::VERSION + 1,
+            ..Default::default()
+        };
+        let mut writer = zstd::Encoder::new(File::create(&path).unwrap(), 1).unwrap();
+        bincode::encode_into_std_write(&cache, &mut writer, bincode::config::standard()).unwrap();
+        writer.finish().unwrap();
+        let result = TagCache::load(&path);
+        std::fs::remove_file(path).unwrap();
+        assert!(result.is_err());
+        assert!(result.err().unwrap().to_string().contains("newer"));
+    }
+}
