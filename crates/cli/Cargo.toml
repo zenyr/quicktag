@@ -1,0 +1,16 @@
+[package]
+name = "quicktag-cli"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+anyhow.workspace = true
+quicktag-core = { path = "../core" }
+quicktag-scanner = { path = "../scanner" }
+quicktag-strings = { path = "../strings" }
+tiger-pkg.workspace = true
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+env_logger = "0.11"

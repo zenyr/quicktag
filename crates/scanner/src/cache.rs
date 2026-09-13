@@ -87,14 +87,11 @@ impl TagCache {
                                     TagCache::default().version
                                 );
 
-                                native_dialog::MessageDialog::new()
-                                    .set_type(native_dialog::MessageType::Error)
-                                    .set_title("Future cache")
-                                    .set_text(&format!("Your cache file ({}) is newer than this build of quicktag\n\nCache version: v{}\nExpected version: v{}", path.as_ref().display(), cache.version, Self::default().version))
-                                    .show_alert()
-                                    .unwrap();
-
-                                std::process::exit(21);
+                                anyhow::bail!(
+                                    "Cache version {} is newer than supported version {}",
+                                    cache.version,
+                                    Self::VERSION
+                                );
                             }
                         }
                     } else {

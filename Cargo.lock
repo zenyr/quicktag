@@ -3255,6 +3255,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "quicktag-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "env_logger",
+ "quicktag-core",
+ "quicktag-scanner",
+ "quicktag-strings",
+ "serde",
+ "serde_json",
+ "tiger-pkg",
+]
+
+[[package]]
 name = "quicktag-core"
 version = "0.1.0"
 dependencies = [
@@ -3281,7 +3296,6 @@ dependencies = [
  "itertools 0.14.0",
  "lazy_static",
  "log",
- "native-dialog",
  "parking_lot",
  "profiling",
  "quicktag-core",

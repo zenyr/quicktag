@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/scanner", "crates/strings", "crates/xg"]
+members = ["crates/cli", "crates/core", "crates/scanner", "crates/strings", "crates/xg"]
 
 [workspace.dependencies]
 anyhow = "1"

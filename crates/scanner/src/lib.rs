@@ -344,16 +344,18 @@ pub fn cache_path() -> PathBuf {
 }
 
 pub fn load_tag_cache() -> TagCache {
-    let cache_file_path = cache_path();
+    load_tag_cache_at(cache_path()).expect("Failed to load or build tag cache")
+}
 
-    if let Ok(CacheLoadResult::Loaded(cache)) = TagCache::load(&cache_file_path) {
-        return cache;
+/// Load or build a cache at an explicit path, without opening UI dialogs.
+pub fn load_tag_cache_at(cache_file_path: impl AsRef<Path>) -> anyhow::Result<TagCache> {
+    let cache_file_path = cache_file_path.as_ref();
+    if let CacheLoadResult::Loaded(cache) = TagCache::load(cache_file_path)? {
+        return Ok(cache);
     }
 
     *SCANNER_PROGRESS.write() = ScanStatus::CreatingScanner;
-    let scanner_context = Arc::new(
-        ScannerContext::create(&package_manager()).expect("Failed to create scanner context"),
-    );
+    let scanner_context = Arc::new(ScannerContext::create(&package_manager())?);
 
     let all_pkgs = package_manager()
         .package_paths
@@ -475,13 +477,13 @@ pub fn load_tag_cache() -> TagCache {
 
     *SCANNER_PROGRESS.write() = ScanStatus::WritingCache;
     info!("Compressing tag cache...");
-    let mut writer = zstd::Encoder::new(File::create(cache_file_path).unwrap(), 3).unwrap();
+    let mut writer = zstd::Encoder::new(File::create(cache_file_path)?, 3)?;
 
-    bincode::encode_into_std_write(&cache, &mut writer, bincode::config::standard()).unwrap();
-    writer.finish().unwrap();
+    bincode::encode_into_std_write(&cache, &mut writer, bincode::config::standard())?;
+    writer.finish()?;
     *SCANNER_PROGRESS.write() = ScanStatus::None;
 
-    cache
+    Ok(cache)
 }
 
 /// Transforms the tag cache to include reference lookup tables
