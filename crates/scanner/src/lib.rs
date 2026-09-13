@@ -156,15 +156,24 @@ pub fn scan_file(
         }
     }
 
+    // Offsets are visited in ascending order. Merge once so membership is linear
+    // in file length rather than file length multiplied by the number of arrays.
+    let blocked_ranges = merge_blocked_ranges(blocked_ranges);
+    let mut blocked_index = 0;
+
     // Pass 2: everything else
     for offset in (0..data.len()).step_by(4) {
         if offset + 4 > data.len() {
             break;
         }
 
-        if blocked_ranges
-            .iter()
-            .any(|range| range.contains(&(offset as u64)))
+        while blocked_index < blocked_ranges.len()
+            && blocked_ranges[blocked_index].end <= offset as u64
+        {
+            blocked_index += 1;
+        }
+        if blocked_index < blocked_ranges.len()
+            && blocked_ranges[blocked_index].contains(&(offset as u64))
         {
             continue;
         }
@@ -239,6 +248,22 @@ pub fn scan_file(
     }
 
     r
+}
+
+fn merge_blocked_ranges(mut ranges: Vec<std::ops::Range<u64>>) -> Vec<std::ops::Range<u64>> {
+    ranges.retain(|r| r.start < r.end);
+    ranges.sort_unstable_by_key(|r| r.start);
+    let mut merged: Vec<std::ops::Range<u64>> = Vec::with_capacity(ranges.len());
+    for range in ranges {
+        if let Some(last) = merged.last_mut()
+            && range.start <= last.end
+        {
+            last.end = last.end.max(range.end);
+        } else {
+            merged.push(range);
+        }
+    }
+    merged
 }
 
 #[profiling::function]
@@ -589,4 +614,36 @@ pub enum ScannerMode {
     Tags,
     Hashes,
     Both,
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::merge_blocked_ranges;
+
+    #[test]
+    fn merged_cursor_matches_original_membership() {
+        // Deterministic overlapping, nested, adjacent and empty ranges.
+        let mut ranges = vec![10..30, 0..5, 5..10, 12..14, 50..50, 90..80];
+        let mut seed = 7u64;
+        for _ in 0..200 {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let start = seed % 200;
+            ranges.push(start..start + (seed >> 32) % 20);
+        }
+        let merged = merge_blocked_ranges(ranges.clone());
+        assert!(merged.windows(2).all(|w| w[0].end < w[1].start));
+        let mut cursor = 0;
+        for offset in 0..250 {
+            while cursor < merged.len() && merged[cursor].end <= offset {
+                cursor += 1;
+            }
+            let fast = cursor < merged.len() && merged[cursor].contains(&offset);
+            assert_eq!(
+                fast,
+                ranges.iter().any(|r| r.contains(&offset)),
+                "offset {offset}"
+            );
+        }
+        assert!(merge_blocked_ranges(vec![]).is_empty());
+    }
 }

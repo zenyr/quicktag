@@ -2,6 +2,8 @@
 
 Development branch: `agent-cli` in <https://github.com/zenyr/quicktag>.
 Based on upstream `bdad2e92442439bb0f71c67aca608b7ca0a8c74c` (inspected 2026-09-13).
+The upstream [local API proposal](https://github.com/v4nguard/quicktag/issues/24)
+also identifies reference and string queries as integration targets.
 The existing desktop application remains available. `quicktag-cli` uses the same
 package reader, class tables, string decoder and scanner.
 
@@ -138,7 +140,8 @@ so the GUI and CLI share behavior.
 ## Validation status
 
 Synthetic tests exercise hash byte order, pagination, byte bounds, Unicode
-clipping, request parsing/recovery, dataset invalidation and future-cache errors.
+clipping, request parsing/recovery, dataset invalidation, future-cache errors, and
+equivalence of merged blocked-range lookup to the original scanner membership test.
 Actual package queries and GUI/CLI result comparison require the user's dataset;
 record the tested game build and examples before claiming data-level parity.
 
